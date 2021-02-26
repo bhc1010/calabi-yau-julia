@@ -71,7 +71,7 @@ function ExportData(data, path)
     end
 end
 
-function SplitAndExport(data, path; train_percent=0.8)
+function SplitAndExport(data, ONT, path; train_percent=0.8)
     train_set = []
     test_set = []
     shuffle!(data)
@@ -107,9 +107,9 @@ function SplitAndExport(data, path; train_percent=0.8)
 end
 
 function ExportCSV(csv::Array, dir::String, file_name::String)
-    dir = "$dir/$file_name"
-    if !ispath(dir); mkpath(dir); end;
-    open(dir, "w") do f
+    dir = dir*"/csv"
+    if !isdir(dir); mkdir(dir); end;
+    open(dir*file_name, "w") do f
         writedlm(f, csv, ",")
     end
 end
@@ -140,8 +140,8 @@ function ImportSplitData(import_path::String; export_csv=false)
     test_set = DataFrameToArray(test_df, reimport=true)
 
     if export_csv == true
-        ExportCSV(train_set, "$import_path/csv", "train.csv")
-        ExportCSV(test_set, "$import_path/csv", "test.csv")
+        ExportCSV(train_set, import_path, "train.csv")
+        ExportCSV(test_set, import_path, "test.csv")
         @info("EXPORTED CSV FOR PLOTTING.")
     end
 
@@ -214,18 +214,18 @@ function GetNewSample(;required = nothing, db_path = DB_PATH, export_path = "Non
     @info("OBTAINED: $(size(data,1)) IN TOTAL")
     
     if export_path != "None"
-        # try
+        try
             if split == true 
-                SplitAndExport(data, export_path; train_percent=train_percent)
+                SplitAndExport(data, ontology, export_path; train_percent=train_percent)
                 ExportCSV(required, EXPORT_PATH, "data_indices.csv")
             else
                 n=1
                 while(isdir(export_path*"/$n.gz")) n+=1; end
                 ExportData(data, export_path*"/$n.gz")
             end
-        # catch error
-        #     @error("DATA NOT EXPORTED: ", error)
-        # end
+        catch error
+            @error("DATA NOT EXPORTED: ", error)
+        end
     else 
         @warn("DATA NOT EXPORTED: NO export_path GIVEN.")
     end
