@@ -5,21 +5,19 @@ using Flux.Data:DataLoader
 using Flux:onehotbatch
 using Printf, BSON, Dates, DelimitedFiles
 
+include("params.jl")
 include("sampleData.jl")
 
-const MAX_SIZE = 34
-const CLASS_NUM = 961
-const CLASSES = [x for x in 1:CLASS_NUM]
-const BATCH_SIZE = 1000
-const MODEL_NAME = Dates.format(now(), "mm-dd-yy-HH:MM:SS")*"-$CLASS_NUM"
-const ONTOLOGY = "euler"
-losses = []
-
 accR(x,y,model) = sum(round.(model(x)) .== y)/size(y,1);
+
 accC(x,y,model) = sum(map(argmax, eachcol(model(x))) .== y)/size(y,1);
+
 accuracy(x,y,model) = CLASS_NUM > 1 ? accC(x,y,model) : accR(x,y,model)
-EulerToIndex(y) = convert.(Int32, map(x->0.5*(x+960)+1, y))
+
+EulerToIndex(y) = convert.(Int32, round.(map(x->0.5*(x+960)+1, y)))
+
 HodgeToIndex(y) = convert.(Int32, map(x->0.5*(x+450)+1,y))
+
 SetOntology(ontology::String) = ONTOLOGY = ontology;
 
 function AugmentData!(data)
@@ -29,7 +27,7 @@ function AugmentData!(data)
 
     for d in data
         diff = MAX_SIZE - size(d[1],1)
-        push!(augmentedX, [d[1];zeros(diff,DIM)])
+        diff > 0 ? push!(augmentedX, [d[1];zeros(diff,DIM)]) : nothing
         push!(Y, d[2])
     end
 
@@ -52,42 +50,42 @@ function UnpackageData(data)
     return X, Y
 end
 
-function logging_train!(loss, ps, data, opt)
-    global losses
-    for d in data
-      # back is a method that computes the product of the gradient so far with its argument.
-      train_loss, back = Zygote.pullback(() -> loss(d...), ps)
-      # Insert whatever code you want here that needs training_loss, e.g. logging.
-      push!(losses, train_loss[end])
-      # Apply back() to the correct type of 1.0 to get the gradient of loss.
-      gs = back(one(train_loss))
-      # Insert what ever code you want here that needs gradient.
-      # E.g. logging with TensorBoardLogger.jl as histogram so you can see if it is becoming huge.
-      Flux.update!(opt, ps, gs)
-      # Here you might like to check validation set accuracy, and break out to do early stopping.
+function logging_train!(loss, ps, data, opt, losses)
+    for (i,d) in enumerate(data)
+        # back is a method that computes the product of the gradient so far with its argument.
+        train_loss, back = Zygote.pullback(() -> loss(d...), ps)
+        # Insert whatever code you want here that needs training_loss, e.g. logging.
+        # Apply back() to the correct type of 1.0 to get the gradient of loss.
+        gs = back(one(train_loss))
+        push!(losses, train_loss)
+        # Insert what ever code you want here that needs gradient.
+        # E.g. logging with TensorBoardLogger.jl as histogram so you can see if it is becoming huge.
+        Flux.update!(opt, ps, gs)
+        # Here you might like to check validation set accuracy, and break out to do early stopping.
     end
 end
 
-function Train(model, train_data, test_data, opt, loss, accuracy; epochs=100::Integer)
+function Train(model, dir,train_data, test_data, opt, loss, accuracy; epochs=100::Integer)
     ps = Flux.params(model)
     best_acc = 0.0
     best_loss = 9999999
     last_improvement = 0
     test_x = test_data[1]
     test_y = test_data[2]
-    dir = "/home/oppenheimer/Dev/calabiyau/trained/models"
     n=0
-    while(isdir(dir*"/$n")); n += 1; end
-    dir = dir*"/$n"
-    loss_log = dir*"/log.txt"
-    global losses
-
+    while(isdir("$dir/models/$n")); n += 1; end
+    dir = "$dir/models/$n"
+    log_dir = "$dir/models/$n/log.txt"
+    loss_log = []
     @info("Beginning training loop...")
     for epoch_idx in 1:epochs
+        losses = []
         # Train for a single epoch
         # Flux.train!(loss, ps, train_data, opt)
-        logging_train!(loss, ps, train_data, opt)
+        logging_train!(loss, ps, train_data, opt, losses)
+        # Calculate loss
         last_loss = losses[end]
+        append!(loss_log, last_loss)
         # Calculate accuracy:
         acc = accuracy(test_x,test_y)
         @info(@sprintf("[%d]: Validation loss: %.6f", epoch_idx, last_loss))
@@ -107,7 +105,7 @@ function Train(model, train_data, test_data, opt, loss, accuracy; epochs=100::In
                 rm(dir, recursive=true)
                 mkdir(dir)
             end
-            BSON.@save "$dir/model-$(now())-CLASS_NUM-$CLASS_NUM-acc-$(acc*100).bson" model_dir model epoch_idx opt acc
+            BSON.@save "$dir/model-$(now())-CLASS_NUM-$CLASS_NUM-acc-$(acc*100).bson" model epoch_idx opt acc
             last_improvement = epoch_idx
             best_loss = last_loss
         end
@@ -126,17 +124,17 @@ function Train(model, train_data, test_data, opt, loss, accuracy; epochs=100::In
             break
         end
     end
-    open(loss_log, "w") do file
+    open(log_dir, "w") do file
         writedlm(file, losses, delim=',')
     end
 end
 
 function __main__() 
 
-    GetNewSample(export_path=PATH, split=true, train_percent=0.8, ontology=ONTOLOGY)
+    # GetNewSample(export_path="$PATH/$ONTOLOGY", split=true, train_percent=0.8)
 
     @info("Importing Data...")
-    train_set, test_set = ImportSplitData("/home/oppenheimer/Dev/calabiyau/trained/$EXPORT_PATH/data", export_csv=true)
+    train_set, test_set = ImportSplitData("$PATH/$ONTOLOGY/$DATA_ID/data")
     
     @info("Augmenting Data...")
     AugmentData!(train_set)
@@ -187,7 +185,7 @@ function __main__()
     opt = ADAM()
     loss(x, y) = Flux.mse(model(x), Flux.onehotbatch(y,CLASSES))
     acc(x,y) = accuracy(x,y,model)
-    Train(model, train_data, test_data, opt, loss, acc)
+    Train(model, "$PATH/$ONTOLOGY/$DATA_ID", train_data, test_data, opt, loss, acc)
 end
 
 @info("Headers compiled.")
