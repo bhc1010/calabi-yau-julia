@@ -2,15 +2,7 @@ using DataFrames, CSVFiles, CSV, CodecZlib, DelimitedFiles
 using Random
 
 # TODO: DOCUMENTATION
-
-const TOTAL_DATA = 473_800_775
-const TOTAL_NUM_DB = 474
-const DIM = 4
-SAMPLE_SIZE = 1_000_000
-const DB_PATH = "/media/share/Dev/CalabiYau/data/polytopes_db_4d"
-const PATH = "/home/oppenheimer/Dev/calabiyau/trained"
-EXPORT_PATH = ""
-
+include("params.jl")
 
 function RandomSample(sampleSize::Integer)
     binnedSample = []
@@ -44,34 +36,24 @@ function GetDFMatrix(df::DataFrame, rowHead::Integer, rowFoot::Integer, colHead:
     return convert(Array, df[rowHead:rowFoot, colHead:colFoot] )
 end
 
-SetSampleSize!(sampleSize::Integer) = global SAMPLE_SIZE = sampleSize;
-
-SetPopulationSize!(popSize::Integer) = global TOTAL_DATA = popSize;
-
-function ExportData(data, path)
-    dataOut = DataFrame()
-    @info("Exporting...")
-    for d in data
-        len = convert(Int32, size(d[1],1))
-        delim = zeros(len)
-        delim[1] += len
-        delim[2] += d[2]
-        Δ = hcat(delim, d[1])
-        Δ = convert(DataFrame, Δ)
-        append!(dataOut, Δ)
-    end
-    
-    open(path, "w") do io
-        @info("Opening ", path)
+function ExportData(out, dir, file)
+    open("$dir/$file", "w") do io
+        @info("Opening ", "$dir/$file")
         stream = GzipCompressorStream(io)
         @info("Writing to path...")
-        CSV.write(stream, dataOut)
+        CSV.write(stream, out)
         close(stream)
         @info("Data exported.")
     end
 end
 
-function SplitAndExport(data, ONT, path; train_percent=0.8)
+function ExportCSV(csv::Array, dir::String, file_name::String)
+    open("$dir/$file_name", "w") do f
+        writedlm(f, csv, ",")
+    end
+end
+
+function SplitAndExport(data, path; train_percent=0.8)
     train_set = []
     test_set = []
     shuffle!(data)
@@ -84,34 +66,28 @@ function SplitAndExport(data, ONT, path; train_percent=0.8)
         end
     end
     n = 1
-    if !isdir(path*"/$ONT-$n")
+    if !isdir("$path/$n")
         try
-            mkpath(path*"/$ONT-$n/data")
+            mkpath("$path/$n/data")
+            mkpath("$path/$n/models")
         catch e
             @error("DATA NOT EXPORTED: ", e)
         end
     else
-        while(isdir(path*"/$ONT-$n"))
+        while(isdir(path*"/$n"))
             n += 1
         end
         try
-            mkpath(path*"/$ONT-$n/data")
+            mkpath("$path/$n/data")
         catch e
             @error("DATA NOT EXPORTED: ", e)
         end
     end
-    path = path*"/$ONT-$n/data"
-    ExportData(train_set, path*"/train.gz")
-    ExportData(test_set, path*"/test.gz")
-    EXPORT_PATH = path
-end
-
-function ExportCSV(csv::Array, dir::String, file_name::String)
-    dir = dir*"/csv"
-    if !isdir(dir); mkdir(dir); end;
-    open(dir*file_name, "w") do f
-        writedlm(f, csv, ",")
-    end
+    export_path = "$path/$n/data"
+    train_data = ArrayToDataFrame(train_set)
+    test_data = ArrayToDataFrame(test_set)
+    ExportData(train_data, export_path, "train.gz")
+    ExportData(test_data, export_path, "test.gz")
 end
 
 function LoadDB(path; train_data=false, test_data=false)
@@ -133,43 +109,44 @@ function ImportData(import_path::String, dbId::Integer; train_data=false, test_d
     return data
 end
 
-function ImportSplitData(import_path::String; export_csv=false)
+function ImportSplitData(import_path::String)
     train_df = LoadDB(import_path, train_data=true)
     test_df = LoadDB(import_path, test_data=true)
     train_set = DataFrameToArray(train_df, reimport=true)
     test_set = DataFrameToArray(test_df, reimport=true)
-
-    if export_csv == true
-        ExportCSV(train_set, import_path, "train.csv")
-        ExportCSV(test_set, import_path, "test.csv")
-        @info("EXPORTED CSV FOR PLOTTING.")
-    end
-
     return train_set, test_set  
 end
 
-function DataFrameToArray(df::DataFrame; dbId=nothing, required=[], reimport=false, ont="euler")
+function ArrayToDataFrame(data)
+    out = DataFrame()
+    @info("Exporting...")
+    for d in data
+        len = convert(Int32, size(d[1],1))
+        delim = zeros(len)
+        Δ = hcat(delim, d[1])
+        header = zeros(DIM + 1)
+        header[1] += len
+        header[ontology_index] += d[2]
+        Δ = vcat(header', Δ)
+        Δ = convert(DataFrame, Δ)
+        append!(out, Δ)
+    end
+    return out
+end
+
+function DataFrameToArray(df::DataFrame; dbId=nothing, required=[], reimport=false)
     if isnothing(dbId); dbId = 1; end
     dfPolyId = (dbId - 1) * SAMPLE_SIZE + 1
     data = []
-    ontIndex = 0
     currentRow = 1    
     skip = GetDFValue(df, currentRow, 1, Int32)
     dfSize = size(df,1)
-    whygod=true
 
     if reimport == true
         required = [x for x in 1:SAMPLE_SIZE]
         dfPolyId = 1
     elseif isempty(required)
         required = [x for x in ((dbId - 1) * SAMPLE_SIZE + 1 ):(dbId * SAMPLE_SIZE)]
-    end
-    if ont == "h11"
-        ontIndex = 2
-    elseif ont == "h21"
-        ontIndex = 3
-    elseif ont == "euler"
-        ontIndex = 4
     end
 
     for reqPolyId in required
@@ -185,22 +162,25 @@ function DataFrameToArray(df::DataFrame; dbId=nothing, required=[], reimport=fal
         if currentRow + skip > dfSize; skip = GetDFValue(df, currentRow, 1, Int32); end
         #When we arrive at the correct polytope, grab the matrix and the ontology and add them to the dataset
         polyMat = GetDFMatrix(df, currentRow + 1, currentRow + skip, 2, DIM + 1)
-        ontology = GetDFValue(df, currentRow, ontIndex, Int32)
-        v = GetDFValue(df, currentRow + 1, 1, Int32)
-        p = GetDFValue(df, currentRow + 2, 1, Int32)
-        v_dual = GetDFValue(df, currentRow + 3, 1, Int32)
-        p_dual = GetDFValue(df, currentRow + 4, 1, Int32)
-        polyMat = vcat(polyMat, [v p v_dual p_dual])
+        ontology = GetDFValue(df, currentRow, ontology_index, Int32)
+        if reimport == false
+            v = GetDFValue(df, currentRow + 1, 1, Int32)
+            p = GetDFValue(df, currentRow + 2, 1, Int32)
+            v_dual = GetDFValue(df, currentRow + 3, 1, Int32)
+            p_dual = GetDFValue(df, currentRow + 4, 1, Int32)
+            polyMat = vcat(polyMat, [v p v_dual p_dual])
+        end
         push!(data, (polyMat,ontology))
     end
     println("Database: ", dbId) 
     println("REQUIRED: $(length(required))")
     println("GOT: $(length(data)) ", length(data) == length(required))
     println("---------------")
-    return convert(Array{Tuple{Array{Float64,2},Int32}}, data)
+    # convert(Array{Tuple{Array{Float64,2},Int32}}, data)
+    return data
 end
 
-function GetNewSample(;required = nothing, db_path = DB_PATH, export_path = "None", split = false, train_percent = 0.8, num_db::Integer = TOTAL_NUM_DB, ontology="euler") 
+function GetNewSample(;required = nothing, db_path = DB_PATH, export_path = "None", split = false, train_percent = 0.8, num_db::Integer = TOTAL_NUM_DB) 
     if required ≡ nothing
         required = RandomSample(SAMPLE_SIZE);
     end
@@ -208,7 +188,7 @@ function GetNewSample(;required = nothing, db_path = DB_PATH, export_path = "Non
     data = []
     for i in 1:num_db
         df = LoadDB(db_path, i);
-        dbData = DataFrameToArray(df, dbId=i, required=required[i], ont=ontology)
+        dbData = DataFrameToArray(df, dbId=i, required=required[i])
         append!(data, dbData)
     end
     @info("OBTAINED: $(size(data,1)) IN TOTAL")
@@ -216,12 +196,11 @@ function GetNewSample(;required = nothing, db_path = DB_PATH, export_path = "Non
     if export_path != "None"
         try
             if split == true 
-                SplitAndExport(data, ontology, export_path; train_percent=train_percent)
-                ExportCSV(required, EXPORT_PATH, "data_indices.csv")
+                SplitAndExport(data, export_path; train_percent=train_percent)
+                ExportCSV(required, "$export_path/$DATA_ID/data", "data_indices.csv")
             else
-                n=1
-                while(isdir(export_path*"/$n.gz")) n+=1; end
-                ExportData(data, export_path*"/$n.gz")
+                n = 1; while(isdir("$export_path/$n.gz")) n+=1; end
+                ExportData(data, export_path, "$n.gz")
             end
         catch error
             @error("DATA NOT EXPORTED: ", error)
