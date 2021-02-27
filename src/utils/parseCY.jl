@@ -57,6 +57,8 @@ function MakePolytope!(Δ²::DataFrame, verts, ontology)
     header[4] = ontology.euler
     Δ = vcat(header', Δ)
     Δ = convert(DataFrame, Δ)
+    println(Δ)
+    run(`quit`)
     append!(Δ², Δ) 
 end
 
