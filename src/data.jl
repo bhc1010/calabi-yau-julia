@@ -45,7 +45,7 @@ end
 
 """
 export_gz(out, dir, file)
-Exports out argument as a .gzip file to "$dir/$file" 
+Exports out argument as a .gzip file to "dir/file" 
 """
 function export_gz(out, dir, file)
     open("$dir/$file", "w") do io
@@ -60,7 +60,7 @@ end
 
 """
 export_csv(csv, dir::String, file_name::String)
-Exports csv argument as a csv file to "$dir/$file"
+Exports csv argument as a csv file to "dir/file"
 """
 function export_csv(csv, dir::String, file::String)
     open("$dir/$file", "w") do f
@@ -80,7 +80,7 @@ end
 
 """
 split(data, train_percent)
-Returns data split into two lists, the first containing the first $(train_percent) elements of data, the second containing the last $(1 - train_percent) elements of data.
+Returns data split into two lists, the first containing the first (train_percent) elements of data, the second containing the last (1 - train_percent) elements of data.
 """
 function split(data, train_percent)
     train_data = []
@@ -110,7 +110,7 @@ end
 """
 split_export(data, onts, path; train_percent=0.8, csv=nothing)
 
-Splits data by an amount $(train_percent) and exports both lists to a .gzip file. 
+Splits data by an amount (train_percent) and exports both lists to a .gzip file. 
 
 If csv is given, exports csv as .gzip file.
 """
@@ -148,11 +148,11 @@ end
 """
 Loads dataframe specified by index
 """
-loaddf(path, index) = DataFrame(load(File(format"CSV", "$path/$index.gz")));
+loaddf(path, index) = DataFrame(load(File(format"CSV", "path/index.gz")));
 
 """
 function import_csv(import_path::String; file = nothing)
-Imports csv file at "$import_path/$file"
+Imports csv file at "import_path/file"
 """
 function import_csv(import_path::String; file = nothing)
     csv = AbstractArray{Int}

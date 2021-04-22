@@ -22,7 +22,7 @@ function logging_train!(loss, ps, data, opt, losses)
 end
 
 """
-Handles the entire training session. Saves best model to "$dir/models/$ONTOLOGY/$model_name"
+Handles the entire training session. Saves best model to "dir/models/ONTOLOGY/model_name"
 """
 function Train(model, dir,train_data, test_data, opt, loss, accuracy; epochs=100::Integer)
     ps = Flux.params(model)

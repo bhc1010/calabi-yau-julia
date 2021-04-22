@@ -47,7 +47,7 @@ function __main__()
     # new_sample(export_path="$PATH/$DATA_ID", split=true)
 
     @info("Importing Data...")
-    train_set, test_set = import_split("$PATH/$DATA_ID/data");
+    train_set, test_set = import_split("$PATH/$DATA_ID/1/data");
     
     @info("Augmenting Data...")
     augment!(train_set)
@@ -104,6 +104,14 @@ function __main__()
     end
 
     Train(model, "$PATH/$DATA_ID", train_data, test_data, opt, loss, acc)
+
+    model_dir = "$PATH/$DATA_ID/models/$ONTOLOGY/euler-2021-04-22T01:09:30.459_acc_28.6945.bson"
+    eval_data = [test_x[:,i] for i ∈ rand(1:size(test_x,2), 10)]
+    R = LRP(model_dir, eval_data)
+    p_relevance = new_params(plot_heatmap; title="Relevance of input neurons", x_label=raw"\Chi_{\rm{actual}} - \Chi_{\rm{predicted}}", y_label="Input Neuron", fig_dir="/home/oppenheimer/Dev/calabiyau/figs/relevance.pdf")
+    xs = string.([test_y[i] - argmax(model(eval_data[i])) for i=1:length(eval_data)])
+    ys = string.(collect(1:136))
+    heatmap(xs, ys, R, clim=(-5,5), dpi=300, c=cgrad([:white,:black,:white]))
 end
 
 @info("Headers compiled.")
