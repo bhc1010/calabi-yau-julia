@@ -1,11 +1,11 @@
-# Training
+"""
+Training functions.
+"""
 
-regression_acc(x,y,model) = sum(round.(model(x)) .== reshape(y,1,size(y,1)))/size(y,1);
 
-classification_acc(x,y,model) = sum(map(argmax, eachcol(model(x))) .== y)/size(y,1);
-
-accuracy(x,y,model) = CLASS_NUM > 1 ? classification_acc(x,y,model) : regression_acc(x,y,model)
-
+"""
+Custom training loop to save and plot losses.
+"""
 function logging_train!(loss, ps, data, opt, losses)
     for (i,d) in enumerate(data)
         # back is a method that computes the product of the gradient so far with its argument.
@@ -21,6 +21,9 @@ function logging_train!(loss, ps, data, opt, losses)
     end
 end
 
+"""
+Handles the entire training session. Saves best model to "$dir/models/$ONTOLOGY/$model_name"
+"""
 function Train(model, dir,train_data, test_data, opt, loss, accuracy; epochs=100::Integer)
     ps = Flux.params(model)
     best_acc = 0.0
@@ -29,7 +32,7 @@ function Train(model, dir,train_data, test_data, opt, loss, accuracy; epochs=100
     test_x = test_data[1]
     test_y = test_data[2]
     model_name = ""
-    dir = "$dir/models"
+    temp_dir = "$dir/models/temp"
     loss_log = []
     @info("Beginning training loop...")
     for epoch_idx in 1:epochs
@@ -52,15 +55,15 @@ function Train(model, dir,train_data, test_data, opt, loss, accuracy; epochs=100
         end
         
         if acc > best_acc
-            model_name = "model-$(now())-CLASS_NUM-$CLASS_NUM-acc-$(acc*100).bson"
-            @info(" -> New best loss! Saving model out to $dir/$model_name")
-            if !ispath(dir)
-                mkpath(dir)
+            model_name = "$ONTOLOGY-$(now())_acc_$(acc*100).bson"
+            @info(" -> New best loss! Saving model out to $temp_dir")
+            if !ispath(temp_dir)
+                mkpath(temp_dir)
             else
-                rm(dir, recursive=true)
-                mkpath(dir)
+                rm(temp_dir, recursive=true)
+                mkpath(temp_dir)
             end
-            BSON.@save "$dir/$model_name" model epoch_idx opt acc
+            BSON.@save "$temp_dir/$model_name" model epoch_idx opt acc
             last_improvement = epoch_idx
             best_acc = acc
         end
@@ -76,9 +79,12 @@ function Train(model, dir,train_data, test_data, opt, loss, accuracy; epochs=100
         
         if epoch_idx - last_improvement >= 10
             @warn("Accuracy no longer increasing. Exiting early.")
+            BSON.@load "$temp_dir/$model_name" model_to_save epoch_idx opt acc
+            BSON.@save "$dir/models/$ONTOLOGY/$model_name" model_to_save epoch_idx opt acc
+            rm(temp_dir, recursive=true)
             break
         end
     end
     ## Export loss log for plotting 
-    export_csv(losses, "$dir/logs", "$model_name.csv")
+    export_csv(losses, "$dir/models/$ONTOLOGY/logs", "$model_name.csv")
 end
