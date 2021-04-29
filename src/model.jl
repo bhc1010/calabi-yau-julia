@@ -84,8 +84,10 @@ function __main__()
     hiddenLayer = Dense(neuron_density, neuron_density, relu)
     hidden(X) = Chain(hiddenLayer, X)
     hidden_layers = hidden(hiddenLayer)
-    for l ∈ 1:(layers - 2)
-        hidden_layers = hidden(hidden_layers)
+    if l > 2
+        for l ∈ 1:(layers - 2)
+            hidden_layers = hidden(hidden_layers)
+        end
     end
     model_label="$layers Hidden Layers w/ $neuron_density Neurons Per Layer"
     CLASS_NUM > 1 ? Output = softmax : Output = identity
