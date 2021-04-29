@@ -3,7 +3,7 @@ using Flux, Zygote, CUDA, Random
 using Flux:@epochs
 using Flux.Data:DataLoader
 using Flux:onehotbatch
-using Printf, BSON, Dates, DelimitedFiles
+using Printf, BSON, Dates, DelimitedFiles, LaTeXStrings
 
 include("data.jl")
 include("train.jl")
@@ -23,7 +23,7 @@ NUMBERS_ONLY = true
 
 NUMBERS_ONLY ? MAX_SIZE = 1 : MAX_SIZE = 34;
 
-ONTOLOGY = "h11"
+ONTOLOGY = "euler"
 if ONTOLOGY == "h11"
     ontology_index = 2
     CLASS_NUM = 480
@@ -49,7 +49,7 @@ function __main__()
     # new_sample(export_path="$PATH/$DATA_ID", split=true)
 
     @info("Importing Data...")
-    train_set, test_set = import_split("$PATH/$DATA_ID/1/data");
+    train_set, test_set = import_split("$PATH/$DATA_ID/data");
     
     # @info("Augmenting Data...")
     # augment!(train_set)
@@ -79,28 +79,26 @@ function __main__()
     global test_data = (test_x, test_y)
 
     @info("Building Model...")
+    layers = 3
     neuron_density = 500
-    model_label="3 Hidden Layers w/ $neuron_density Neurons Per Layer"
+    hiddenLayer = Dense(neuron_density, neuron_density, relu)
+    hidden(X) = Chain(hiddenLayer, X)
+    hidden_layers = hidden(hiddenLayer)
+    for l ∈ 1:(layers - 2)
+        hidden_layers = hidden(hidden_layers)
+    end
+    model_label="$layers Hidden Layers w/ $neuron_density Neurons Per Layer"
     CLASS_NUM > 1 ? Output = softmax : Output = identity
     global model = Chain( 
                    Dense(MAX_SIZE*DIM, neuron_density,relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
-                   Dense(neuron_density, neuron_density, relu),
+                   hidden_layers,
                    Dense(neuron_density, CLASS_NUM, relu),
                    Output);
 
     @info("Passing to GPU...")
     model |> gpu
     train_data |> gpu
-    test_data |> gpu
+    test_data |> gpuds
 
     # sqnorm(x) = sum(abs2, x)
     opt = ADAM()
