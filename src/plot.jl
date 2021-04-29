@@ -49,7 +49,7 @@ end
 """
 Generate plots for each set of PlotParams given in params argument.
 """
-function make_plots(model, data, params; load_data=false, load_model=false, η=identity)
+function make_plots(model, data, plots; load_data=false, load_model=false, η=identity)
     load_model ? (@load model m) : local m = model;
 
     if load_data
@@ -61,7 +61,7 @@ function make_plots(model, data, params; load_data=false, load_model=false, η=i
         (test_x, gt) = data
     end
     pred = η(map(argmax, eachcol(m(test_x))))
-    for p ∈ params
+    for p ∈ plots
         if isnothing(p.err)
             p.plot((gt, pred), params=p)
         else
@@ -270,17 +270,140 @@ function plot3_error(data;
     !isnothing(fig_name) && pgfsave("../../figs/$fig_name", axis)
 end
 
+function plot_error_vs_firstorder(data; 
+                   err = rel_error,
+                   params = nothing,
+                   x_min = -960,
+                   x_max = 960,
+                   x_range = nothing,
+                   num_xticks = 9,
+                   y_range = nothing,
+                   y_min = nothing,
+                   y_max = nothing,
+                   num_yticks= 9,
+                   fig_dir=nothing)
+    (gt, X, pred) = data
+    fo = calculate_leadingpiece(X)
+    error, μₑ, σₑ = error_stats(gt, pred, err)
+    error_fo, μ_fo, σ_fo = error_stats(fo, pred, err)
+    max_error = maximum(error)
+    min_error = minimum(error)
+    x_min, x_max, y_min, y_max, num_xticks, num_yticks = _maybe_useparams(params, x_min, x_max, y_min, y_max, num_xticks, num_yticks)
+    (isnothing(fig_dir) && !isnothing(params.fig_dir)) && (fig_dir = params.fig_dir)
+    isnothing(y_min) && (y_min = min_error)
+    isnothing(y_max) && (y_max = max_error)
+    !isnothing(x_range) && (x_min = -abs(x_range)) & (x_max = abs(x_range))
+    !isnothing(y_range) && (y_min = -abs(y_range)) & (y_max = abs(y_range))
+    axis = @pgf Axis(
+        {
+            title=params.title,
+            xlabel=params.x_label,
+            ylabel=params.y_label,
+            xmin = x_min,
+            xmax = x_max,
+            xtick = collect(range(x_min, x_max; length=num_xticks)),
+            ytick = collect(range(y_min, y_max; length=num_yticks)),
+            ymin = y_min,
+            ymax = y_max,
+            "minor y tick num = 9",
+            "every axis/.append style" = {font = raw"\footnotesize" },
+            "every node" = {font = raw"2em"},
+            no_marks,
+            legend_style={nodes={"scale=0.5"}, draw="none"},
+        },
+        Plot(
+            {
+                "only marks",
+                mark_size = "0.1pt",
+                solid,
+                color => "blue",
+                opacity = 0.01,
+            },
+            Table(;
+                x=gt,
+                y=error
+            )
+        ),
+        Plot(
+            {
+                "only marks",
+                mark_size = "0.1pt",
+                solid,
+                color => "red",
+                opacity = 0.01,
+            },
+            Table(;
+                x=fo,
+                y=error_fo
+            )
+        ),
+    )       
+    !isnothing(fig_dir) && pgfsave(fig_dir, axis, dpi=600)
+end
+
 """
 Plot data as a histogram 
 """
 ## Distributions
-function plot_datahist(data;
+function plot_datahist(data, ontology;
                    x_bound= CLASS_NUM - 1, 
-                   params = defaultParams)
-    x = -960:2:960
-    classes = [index_to_euler(x) for x ∈ data]
-    number_density = [count(x->x==i, classes) for i ∈ -960:2:960]
-    bins = [(x,y) for (x,y) ∈ zip(collect(x), number_density)]
+                   params = defaultParams,
+                   fig_dir=nothing)
+    (gt, p) = data
+    if ontology == "euler"
+        local o_range = -960:2:960
+    elseif ontology == "h11" || ontology == "h21"
+        local o_range = 1:480
+        local x_ticks = [1,100,100,200,200,300,400,480]
+    end
+    number_density = [count(x->x==i, gt) for i ∈ o_range]
+    bins = [(x,y) for (x,y) ∈ zip(collect(o_range), number_density)]
+    (isnothing(fig_dir) && !isnothing(params.fig_dir)) && (fig_dir = params.fig_dir)
+    axis = @pgf Axis(
+        {
+            title=params.title,
+            xlabel=params.x_label,
+            ylabel=params.y_label,
+            xmin = params.x_min,
+            xmax = params.x_max,
+            ymin = params.y_min,
+            xtick = x_ticks,
+            grid = "none",
+            "minor y tick num = 3",
+        },
+        Plot(
+            {
+                "mark=no",
+                "ybar interval",
+                fill = "black", 
+                color = "black",
+            }, 
+            Coordinates(bins)
+        )
+    )  
+    !isnothing(fig_dir) && pgfsave(fig_dir, axis)
+end 
+
+"""
+Plot data as a histogram 
+"""
+## Distributions
+function plot_datahist_with_prediction(data, ontology;
+                   x_bound= CLASS_NUM - 1, 
+                   params = defaultParams,
+                   fig_dir=nothing)
+    (gt, p) = data
+    if ontology == "euler"
+        local o_range = -960:2:960
+    elseif ontology == "h11" || ontology == "h21"
+        local o_range = 1:480
+    end
+    number_density_gt = [count(x->x==i, gt) for i ∈ o_range]
+    bins_gt = [(x,y) for (x,y) ∈ zip(collect(o_range), number_density_gt)]
+    number_density_p = [count(x->x==i, p) for i ∈ o_range]
+    bins_p = [(x,y) for (x,y) ∈ zip(collect(o_range), number_density_p)]
+    (isnothing(fig_dir) && !isnothing(params.fig_dir)) && (fig_dir = params.fig_dir)
+
     axis = @pgf Axis(
         {
             title=params.title,
@@ -297,15 +420,24 @@ function plot_datahist(data;
             {
                 "mark=no",
                 "ybar interval",
-                fill = "black", 
-                color = "black",
+                fill = "blue", 
+                color = "blue",
+                opacity = 0.5,
             }, 
-            Coordinates(bins)
+            Coordinates(bins_gt)
+        ),
+        Plot(
+            {
+                "mark=no",
+                "ybar interval",
+                fill = "red", 
+                color = "red",
+                opacity = 0.5,
+            }, 
+            Coordinates(bins_p)
         )
     )  
-    if save_figure == true
-        !isnothing(params.fig_name) && pgfsave("../../figs/$fig_name", axis)
-    end
+    !isnothing(fig_dir) && pgfsave(fig_dir, axis)
 end 
 
 """

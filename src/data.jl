@@ -188,6 +188,7 @@ end
 
 """
 array_to_df(data)
+
 Converts array data to dataframe for exporting
 """
 function array_to_df(data)
@@ -211,6 +212,7 @@ end
 
 """
 df_to_array(df::DataFrame; dbId=nothing, required=nothing, reimport=false)
+
 Converts dataframe to array data for training, testing, or evaluation
 """
 function df_to_array(df::DataFrame; dbId=nothing, required=nothing, reimport=false)

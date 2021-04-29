@@ -46,7 +46,7 @@ function calculate_leadingpiece(X)
             (x == 0.0) && pop!(v)
             (x != 0.0) && break
         end
-        while length(v) > 4; popfirst!(v);end
+        while length(v) > 4; pop!(v);end
         pts = v[2]
         dualpts = v[4]
         if ONTOLOGY == "h11"
@@ -69,37 +69,37 @@ function relevance(W, b, X)
     R = [zeros(length(a[i])) for i ∈ 1:length(a)]
     R₀ = [0.0 for i ∈ 1:length(a)]
     R[end][argmax(softmax(a[end]))] = 1
-    ϵ = 1e-9
-    for m ∈ length(W):-1:1
-        for j ∈ 1:length(R[m])
-            for k ∈ 1:length(R[m + 1])
-                z = sum([a[m][l]*W[m][k,l] for l ∈ 1:length(a[m])]) + b[m][k] + ϵ
-                s = R[m + 1][k] / z
-                c1 = W[m][k,j] * s
-                c2 = b[m][k] * s 
-                R[m][j] += a[m][j] * c1 + c2/length(R[m])
-            end
-        end
-    end
-    return R
-    
+    # ϵ = [0.0, 0.25, 0.0]
+    # γ = [0.25, 0.0, 0.0]
+    # lrp_layers = [floor((length(W) - 1) / 3) for i=1:3]
+    # remainder = length(W) - sum(lrp_layers)
+    # remainder > 0 && (lrp_layers[3] = lrp_layers[3] + remainder)
+    # lrp_layers = cumsum(lrp_layers)
     # for m ∈ length(W):-1:1
+    #     ms = m*ones(3)
+    #     α = findall(x -> 0 ≤ x ≤ m + 1, lrp_layers - ms)
     #     for j ∈ 1:length(R[m])
     #         for k ∈ 1:length(R[m + 1])
-    #             z = sum([a[m][l]*W[m][k,l] for l ∈ 1:length(a[m])]) + b[m][k]
+    #             z = sum([a[m][l]*(W[m][k,l] + (γ[α] * relu(W[m][k,l]) )[1] ) for l ∈ 1:length(a[m])]) + b[m][k] + ϵ[α][1]
     #             s = R[m + 1][k] / z
     #             c1 = W[m][k,j] * s
     #             j == 1 && (R₀[m] += (b[m][k] * s))
-    #             R[m][j] += a[m][j] * c1 #+ R₀[m]#+ c2/length(R[m])
+    #             R[m][j] += a[m][j] * c1
     #         end
     #     end
     # end
-    # return (R, R₀)
-    
-    # z = W[m]*a[m] + b[m] .+ ϵ
-    # s = R[m + 1] ./ z
-    # c = [sum([W[m][k,j] * s[k] for k ∈ 1:length(s)]) for j ∈ 1:size(W[m],2)]
-    # R[m] = a[m] .* c
+    for m ∈ length(W):-1:1
+        for j ∈ 1:length(R[m])
+            for k ∈ 1:length(R[m + 1])
+                z = sum([a[m][l]*W[m][k,l] for l ∈ 1:length(a[m])]) + b[m][k]
+                s = R[m + 1][k] / z
+                c1 = W[m][k,j] * s
+                j == 1 && (R₀[m] += (b[m][k] * s))
+                R[m][j] += a[m][j] * c1
+            end
+        end
+    end
+    return (R, R₀)
 end
 
 """
@@ -119,7 +119,7 @@ end
 Layer-wise Relevance Propogation.
 LRP(model_dir, data) : (model, X) ⟶ R = [r₁, … ,rₙ] where rᵢ is the relevance of layer i
 """
-function LRP(model_dir, data)
+function LRP(model_dir, data; normalize=false)
     @load model_dir model
     P = params(model)
     W = [P[i] for i ∈ 1:2:length(P)]
@@ -127,7 +127,33 @@ function LRP(model_dir, data)
     R = zeros(length(data[1]), length(data))
     for (i,d) ∈ enumerate(data)
         r = relevance(W, b, d)
-        R[:,i] = r[1]
+        R[:,i] = r[1][1]
+    end
+    if normalize == true
+        R_max = map(maximum, eachcol(abs.(R)))
+        for i = 1:10
+            R[:,i] = abs.(R[:,i] / R_max[i])
+        end
     end
     return R
+end
+
+function LRP(model::Chain, data; normalize=false)
+    P = params(model)
+    W = [P[i] for i ∈ 1:2:length(P)]
+    b = [P[i] for i ∈ 2:2:length(P)]
+    R = zeros(length(data[1]), length(data))
+    R₀ = []
+    for (i,d) ∈ enumerate(data)
+        r = relevance(W, b, d)
+        R[:,i] = r[1][1]
+        push!(R₀ ,r[2])
+    end
+    if normalize == true
+        R_max = map(maximum, eachcol(abs.(R)))
+        for i = 1:10
+            R[:,i] = abs.(R[:,i] / R_max[i])
+        end
+    end
+    return R, R₀
 end
