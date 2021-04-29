@@ -66,12 +66,10 @@ function __main__()
     display(train_x[:,sample])            
     ######################################  
 
-    if CLASS_NUM > 1
-        if ONTOLOGY == "euler"
-            @info("Mapping ontology to classification...")
-            train_y = euler_to_index(train_y)
-            test_y = euler_to_index(test_y)
-        end
+    if CLASS_NUM > 1 && ONTOLOGY == "euler"
+        @info("Mapping ontology to classification...")
+        train_y = euler_to_index(train_y)
+        test_y = euler_to_index(test_y)
     end
 
     @info("Data loaded.")
